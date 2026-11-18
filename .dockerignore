@@ -1,0 +1,13 @@
+.git
+.gitignore
+.gitattributes
+.github
+.idea
+*.iml
+.gradle
+build/
+out/
+*.md
+docs/
+.env
+*.env

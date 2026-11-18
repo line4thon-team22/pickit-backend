@@ -1,0 +1,76 @@
+# main에 머지(푸시)될 때만 배포한다. 기능 PR은 develop으로, 배포할 때 develop → main PR을 머지한다.
+# 필요한 GitHub Secrets(팀 저장소): AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, EC2_HOST, EC2_SSH_KEY
+name: Deploy to EC2
+
+on:
+  push:
+    branches: [ "main" ]
+
+# 연달아 머지돼도 배포가 겹치지 않게 순서대로 실행한다.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-2
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image to ECR
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.login-ecr.outputs.registry }}/pickit-backend:latest
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            export PATH=$PATH:/snap/bin   # aws CLI를 snap으로 설치한 경우
+            REGISTRY=${{ steps.login-ecr.outputs.registry }}
+            IMAGE=$REGISTRY/pickit-backend:latest
+
+            # EC2에 붙인 IAM 역할로 ECR 로그인(키 불필요)
+            aws ecr get-login-password --region ap-northeast-2 \
+              | docker login --username AWS --password-stdin $REGISTRY
+
+            docker pull $IMAGE
+
+            docker stop pickit-backend || true
+            docker rm pickit-backend || true
+
+            # 업로드 사진(프로필·교환글·채팅)은 컨테이너가 바뀌어도 남도록 서버 폴더에 저장한다.
+            mkdir -p /home/ubuntu/uploads
+
+            # DB·CORS 등 설정값은 서버의 /home/ubuntu/app.env에서 읽는다.
+            docker run -d \
+              --name pickit-backend \
+              --restart unless-stopped \
+              --env-file /home/ubuntu/app.env \
+              -v /home/ubuntu/uploads:/app/uploads \
+              -p 8080:8080 \
+              $IMAGE
+
+            docker image prune -af
+
+            echo "===== Application Logs ====="
+            sleep 5
+            docker logs --tail 30 pickit-backend
