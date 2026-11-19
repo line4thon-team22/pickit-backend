@@ -17,16 +17,18 @@ public record AppointmentListResponse(
             ChatRoomDetailResponse.Opponent opponent,
             String meetingPlace,
             LocalDateTime confirmedAt,
-            LocalDateTime completedAt
+            LocalDateTime completedAt,
+            boolean reviewed
     ) {
-        public static Item of(TradeAppointment appointment, Long opponentId, User opponent) {
+        public static Item of(TradeAppointment appointment, Long opponentId, User opponent, boolean reviewed) {
             return new Item(
                     appointment.getAppointmentId(),
                     ChatRoomDetailResponse.PostInfo.from(appointment.getPost()),
                     ChatRoomDetailResponse.Opponent.from(opponentId, opponent),
                     appointment.getMeetingPlace(),
                     appointment.getConfirmedAt(),
-                    appointment.getCompletedAt()
+                    appointment.getCompletedAt(),
+                    reviewed
             );
         }
     }

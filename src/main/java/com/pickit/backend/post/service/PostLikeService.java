@@ -20,10 +20,13 @@ public class PostLikeService {
 
     private final PostLikeRepository postLikeRepository;
     private final ExchangePostRepository exchangePostRepository;
+    private final PostStateResolver postStateResolver;
 
-    public PostLikeService(PostLikeRepository postLikeRepository, ExchangePostRepository exchangePostRepository) {
+    public PostLikeService(PostLikeRepository postLikeRepository, ExchangePostRepository exchangePostRepository,
+                           PostStateResolver postStateResolver) {
         this.postLikeRepository = postLikeRepository;
         this.exchangePostRepository = exchangePostRepository;
+        this.postStateResolver = postStateResolver;
     }
 
     @Transactional
@@ -58,8 +61,9 @@ public class PostLikeService {
         PageRequest pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "likeId"));
         Page<ExchangePost> postPage = postLikeRepository.findLikedPostsByUserId(userId, pageable);
 
+        var states = postStateResolver.resolveAll(postPage.getContent());
         var content = postPage.getContent().stream()
-                .map(post -> PostListResponse.PostSummary.from(post, true))
+                .map(post -> PostListResponse.PostSummary.from(post, true, states.get(post.getPostId())))
                 .toList();
 
         return new PostListResponse(content, postPage.getNumber(), postPage.getSize());

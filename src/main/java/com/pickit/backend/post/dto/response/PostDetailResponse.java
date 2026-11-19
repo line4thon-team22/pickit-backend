@@ -3,6 +3,7 @@ package com.pickit.backend.post.dto.response;
 import com.pickit.backend.auth.entity.User;
 import com.pickit.backend.post.entity.ExchangePost;
 import com.pickit.backend.post.entity.PostImage;
+import com.pickit.backend.post.service.PostStateResolver;
 import com.pickit.backend.user.dto.response.UserResponse;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -21,9 +22,11 @@ public record PostDetailResponse(
         List<String> images,
         LocalDateTime createdAt,
         UserResponse writer,
-        Boolean isLiked
+        Boolean isLiked,
+        String tab,
+        String tag
 ) {
-    public static PostDetailResponse of(ExchangePost post, User writer, boolean isLiked) {
+    public static PostDetailResponse of(ExchangePost post, User writer, boolean isLiked, PostStateResolver.PostState state) {
         List<String> imageUrls = post.getImages().stream()
                 .sorted(java.util.Comparator.comparing(PostImage::getSortOrder))
                 .map(PostImage::getImageUrl)
@@ -45,7 +48,9 @@ public record PostDetailResponse(
                 imageUrls,
                 post.getCreatedAt(),
                 writerResponse,
-                isLiked
+                isLiked,
+                state.tab(),
+                state.tag()
         );
     }
 }

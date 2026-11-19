@@ -5,6 +5,7 @@ import com.pickit.backend.appointment.dto.response.AppointmentConfirmResponse;
 import com.pickit.backend.appointment.dto.response.AppointmentListResponse;
 import com.pickit.backend.appointment.entity.TradeAppointment;
 import com.pickit.backend.appointment.repository.TradeAppointmentRepository;
+import com.pickit.backend.appointment.repository.TradeReviewRepository;
 import com.pickit.backend.auth.entity.User;
 import com.pickit.backend.auth.repository.UserRepository;
 import com.pickit.backend.chat.dto.response.ChatMessageBroadcastResponse;
@@ -36,15 +37,18 @@ public class AppointmentService {
     private final ChatRoomRepository chatRoomRepository;
     private final ChatMessageRepository chatMessageRepository;
     private final UserRepository userRepository;
+    private final TradeReviewRepository reviewRepository;
 
     public AppointmentService(TradeAppointmentRepository appointmentRepository,
                               ChatRoomRepository chatRoomRepository,
                               ChatMessageRepository chatMessageRepository,
-                              UserRepository userRepository) {
+                              UserRepository userRepository,
+                              TradeReviewRepository reviewRepository) {
         this.appointmentRepository = appointmentRepository;
         this.chatRoomRepository = chatRoomRepository;
         this.chatMessageRepository = chatMessageRepository;
         this.userRepository = userRepository;
+        this.reviewRepository = reviewRepository;
     }
 
     /** 교환 확정 결과. message는 커밋 후 채팅방 구독자에게 전달할 APPOINTMENT 메시지다. */
@@ -63,6 +67,11 @@ public class AppointmentService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 교환 약속이 확정된 채팅방입니다.");
         }
 
+        // 다른 채팅방에서 이미 약속이 확정돼 글이 예약 중/완료면 또 확정할 수 없다.
+        if (!"OPEN".equals(room.getPost().getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 다른 분과 교환이 진행 중인 글입니다.");
+        }
+
         LocalDateTime now = LocalDateTime.now(SEOUL).truncatedTo(ChronoUnit.SECONDS);
         TradeAppointment appointment;
         try {
@@ -73,11 +82,9 @@ public class AppointmentService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 교환 약속이 확정된 채팅방입니다.");
         }
 
-        // 확정되면 글을 예약 상태로 바꾼다. 이미 다른 상태면 그대로 둔다.
+        // 확정되면 글을 예약 상태로 바꾼다.
         ExchangePost post = room.getPost();
-        if ("OPEN".equals(post.getStatus())) {
-            post.updateStatus("RESERVED");
-        }
+        post.updateStatus("RESERVED");
 
         ChatMessage saved = chatMessageRepository.saveAndFlush(new ChatMessage(
                 room, userId, ChatMessageType.APPOINTMENT,
@@ -126,7 +133,8 @@ public class AppointmentService {
                 .map(appointment -> {
                     Long opponentId = appointment.getOpponentId(userId);
                     User opponent = userRepository.findById(opponentId).orElse(null);
-                    return AppointmentListResponse.Item.of(appointment, opponentId, opponent);
+                    boolean reviewed = reviewRepository.existsByAppointmentAndReviewerId(appointment, userId);
+                    return AppointmentListResponse.Item.of(appointment, opponentId, opponent, reviewed);
                 })
                 .toList();
 

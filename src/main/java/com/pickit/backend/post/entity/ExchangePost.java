@@ -49,6 +49,10 @@ public class ExchangePost {
     @Column(name = "status", nullable = false, length = 20)
     private String status = "OPEN"; // OPEN, RESERVED, COMPLETED
 
+    // 글 작성 시점의 위치 인증 기록 id. 없으면(null) 처음부터 일반 교환글.
+    @Column(name = "verification_id")
+    private Long verificationId;
+
     @OneToMany(mappedBy = "exchangePost", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<PostImage> images = new ArrayList<>();
 
@@ -73,6 +77,14 @@ public class ExchangePost {
         this.preferredLocation = preferredLocation;
         this.preferredTime = preferredTime;
         this.description = description;
+    }
+
+    public void linkVerification(Long verificationId) {
+        this.verificationId = verificationId;
+    }
+
+    public Long getVerificationId() {
+        return verificationId;
     }
 
     public void update(String wantItemName, String preferredLocation, String preferredTime, String description) {

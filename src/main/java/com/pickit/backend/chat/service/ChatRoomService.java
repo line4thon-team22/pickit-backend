@@ -1,6 +1,8 @@
 package com.pickit.backend.chat.service;
 
+import com.pickit.backend.appointment.entity.TradeAppointment;
 import com.pickit.backend.appointment.repository.TradeAppointmentRepository;
+import com.pickit.backend.appointment.repository.TradeReviewRepository;
 import com.pickit.backend.auth.entity.User;
 import com.pickit.backend.auth.repository.UserRepository;
 import com.pickit.backend.chat.dto.response.ChatRoomDetailResponse;
@@ -12,6 +14,7 @@ import com.pickit.backend.chat.repository.ChatRoomRepository;
 import com.pickit.backend.common.service.FileService;
 import com.pickit.backend.post.entity.ExchangePost;
 import com.pickit.backend.post.repository.ExchangePostRepository;
+import com.pickit.backend.post.service.PostStateResolver;
 import java.util.List;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
@@ -31,16 +34,21 @@ public class ChatRoomService {
     private final UserRepository userRepository;
     private final FileService fileService;
     private final TradeAppointmentRepository appointmentRepository;
+    private final PostStateResolver postStateResolver;
+    private final TradeReviewRepository reviewRepository;
 
     public ChatRoomService(ChatRoomRepository chatRoomRepository, ExchangePostRepository exchangePostRepository,
                            ChatMessageRepository chatMessageRepository, UserRepository userRepository,
-                           FileService fileService, TradeAppointmentRepository appointmentRepository) {
+                           FileService fileService, TradeAppointmentRepository appointmentRepository,
+                           PostStateResolver postStateResolver, TradeReviewRepository reviewRepository) {
         this.chatRoomRepository = chatRoomRepository;
         this.exchangePostRepository = exchangePostRepository;
         this.chatMessageRepository = chatMessageRepository;
         this.userRepository = userRepository;
         this.fileService = fileService;
         this.appointmentRepository = appointmentRepository;
+        this.postStateResolver = postStateResolver;
+        this.reviewRepository = reviewRepository;
     }
 
     /** 교환글에서 채팅을 시작한다. 같은 글에 이미 만든 방이 있으면 그 방을 반환한다. */
@@ -53,7 +61,20 @@ public class ChatRoomService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "본인의 교환글에는 채팅방을 만들 수 없습니다.");
         }
 
-        return chatRoomRepository.findByPostAndBuyerId(post, buyerId)
+        var existingRoom = chatRoomRepository.findByPostAndBuyerId(post, buyerId);
+        // 이미 대화 중인 방은 그대로 열 수 있고, 새 채팅만 현장 글 인증 조건을 확인한다.
+        if (existingRoom.isEmpty()
+                && PostStateResolver.TAB_ONSITE.equals(postStateResolver.resolve(post).tab())
+                && !postStateResolver.isVerifiedNow(buyerId, post.getPopup().getPopupId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "현장 교환글은 해당 팝업에서 위치 인증을 한 분만 채팅을 시작할 수 있습니다.");
+        }
+
+        // 이미 예약 중이거나 교환 완료된 글에는 새 채팅을 시작할 수 없다. (기존 방은 위에서 그대로 열린다.)
+        if (existingRoom.isEmpty() && !"OPEN".equals(post.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 교환이 진행 중이거나 완료된 글입니다.");
+        }
+
+        return existingRoom
                 .map(room -> new CreateChatRoomResponse(room.getRoomId(), false))
                 .orElseGet(() -> {
                     try {
@@ -89,7 +110,9 @@ public class ChatRoomService {
 
         Long opponentId = room.getOpponentId(userId);
         User opponent = userRepository.findById(opponentId).orElse(null);
-        return ChatRoomDetailResponse.of(room, opponentId, opponent, appointmentRepository.findByRoom(room).orElse(null));
+        TradeAppointment appointment = appointmentRepository.findByRoom(room).orElse(null);
+        boolean reviewed = appointment != null && reviewRepository.existsByAppointmentAndReviewerId(appointment, userId);
+        return ChatRoomDetailResponse.of(room, opponentId, opponent, appointment, reviewed);
     }
 
     /** 채팅 사진을 저장하고 URL을 반환한다. 메시지 전송은 이후 WebSocket(IMAGE)으로 한다. */

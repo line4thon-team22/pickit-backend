@@ -13,6 +13,8 @@ public interface ChatRoomRepository extends JpaRepository<ChatRoom, Long> {
 
     Optional<ChatRoom> findByPostAndBuyerId(ExchangePost post, Long buyerId);
 
+    boolean existsByPost(ExchangePost post);
+
     /** 내가 참여한 방을 마지막 메시지 시각(메시지가 없으면 방 생성 시각) 최신순으로 조회한다. */
     @Query(value = """
             select r from ChatRoom r

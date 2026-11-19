@@ -61,30 +61,33 @@ public record ChatRoomDetailResponse(
         }
     }
 
-    /** 확정된 교환 약속. completedAt이 null이면 아직 교환 전이다. */
+    /** 확정된 교환 약속. completedAt이 null이면 아직 교환 전이고, reviewed는 내가 상대에게 별점을 이미 남겼는지다. */
     public record AppointmentInfo(
             Long appointmentId,
             String meetingPlace,
             LocalDateTime confirmedAt,
-            LocalDateTime completedAt
+            LocalDateTime completedAt,
+            boolean reviewed
     ) {
-        public static AppointmentInfo from(TradeAppointment appointment) {
+        public static AppointmentInfo from(TradeAppointment appointment, boolean reviewed) {
             return new AppointmentInfo(
                     appointment.getAppointmentId(),
                     appointment.getMeetingPlace(),
                     appointment.getConfirmedAt(),
-                    appointment.getCompletedAt()
+                    appointment.getCompletedAt(),
+                    reviewed
             );
         }
     }
 
     /** appointment는 약속이 없으면 null이다. */
-    public static ChatRoomDetailResponse of(ChatRoom room, Long opponentId, User opponent, TradeAppointment appointment) {
+    public static ChatRoomDetailResponse of(ChatRoom room, Long opponentId, User opponent, TradeAppointment appointment,
+                                          boolean reviewed) {
         return new ChatRoomDetailResponse(
                 room.getRoomId(),
                 PostInfo.from(room.getPost()),
                 Opponent.from(opponentId, opponent),
-                appointment == null ? null : AppointmentInfo.from(appointment)
+                appointment == null ? null : AppointmentInfo.from(appointment, reviewed)
         );
     }
 }

@@ -23,7 +23,7 @@ public class User {
     private String profileImageUrl;
 
     @Column(name = "manner_score", nullable = false)
-    private Double mannerScore = 36.5;
+    private Double mannerScore = 5.0; // 받은 별점(1~5) 평균, 평가가 없으면 5.0
 
     @Column(name = "is_premium", nullable = false)
     private Boolean isPremium = false;
@@ -49,6 +49,10 @@ public class User {
 
     public void updateProfileImageUrl(String profileImageUrl) {
         this.profileImageUrl = profileImageUrl;
+    }
+
+    public void updateMannerScore(Double mannerScore) {
+        this.mannerScore = mannerScore;
     }
 
     public void clearProfileImageUrl() {

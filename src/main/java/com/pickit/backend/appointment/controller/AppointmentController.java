@@ -1,10 +1,13 @@
 package com.pickit.backend.appointment.controller;
 
 import com.pickit.backend.appointment.dto.request.CreateAppointmentRequest;
+import com.pickit.backend.appointment.dto.request.CreateReviewRequest;
 import com.pickit.backend.appointment.dto.response.AppointmentCompleteResponse;
 import com.pickit.backend.appointment.dto.response.AppointmentConfirmResponse;
 import com.pickit.backend.appointment.dto.response.AppointmentListResponse;
+import com.pickit.backend.appointment.dto.response.ReviewResponse;
 import com.pickit.backend.appointment.service.AppointmentService;
+import com.pickit.backend.appointment.service.ReviewService;
 import com.pickit.backend.common.dto.ApiResponse;
 import jakarta.validation.Valid;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -23,10 +26,13 @@ import org.springframework.web.bind.annotation.RestController;
 public class AppointmentController {
 
     private final AppointmentService appointmentService;
+    private final ReviewService reviewService;
     private final SimpMessagingTemplate messagingTemplate;
 
-    public AppointmentController(AppointmentService appointmentService, SimpMessagingTemplate messagingTemplate) {
+    public AppointmentController(AppointmentService appointmentService, ReviewService reviewService,
+                                 SimpMessagingTemplate messagingTemplate) {
         this.appointmentService = appointmentService;
+        this.reviewService = reviewService;
         this.messagingTemplate = messagingTemplate;
     }
 
@@ -50,6 +56,16 @@ public class AppointmentController {
     ) {
         Long userId = (Long) authentication.getPrincipal();
         return ApiResponse.success(appointmentService.complete(userId, appointmentId));
+    }
+
+    @PostMapping("/appointments/{appointmentId}/reviews")
+    public ApiResponse<ReviewResponse> createReview(
+            @PathVariable Long appointmentId,
+            @Valid @RequestBody CreateReviewRequest request,
+            Authentication authentication
+    ) {
+        Long userId = (Long) authentication.getPrincipal();
+        return ApiResponse.success(reviewService.createReview(userId, appointmentId, request.rating()));
     }
 
     @GetMapping("/appointments/me")

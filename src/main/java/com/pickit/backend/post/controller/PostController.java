@@ -39,12 +39,13 @@ public class PostController {
             @RequestParam(required = false) String status,
             @RequestParam(required = false, defaultValue = "LATEST") String sort,
             @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String tab,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             Authentication authentication
     ) {
         Long currentUserId = authentication != null && authentication.getPrincipal() instanceof Long ? (Long) authentication.getPrincipal() : null;
-        PostListResponse response = postService.getPosts(popupId, categoryId, status, sort, keyword, page, size, currentUserId);
+        PostListResponse response = postService.getPosts(popupId, categoryId, status, sort, keyword, tab, page, size, currentUserId);
         return ApiResponse.success(response);
     }
 

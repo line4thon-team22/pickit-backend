@@ -4,6 +4,7 @@ import com.pickit.backend.auth.entity.User;
 import com.pickit.backend.auth.repository.UserRepository;
 import com.pickit.backend.category.entity.Category;
 import com.pickit.backend.category.repository.CategoryRepository;
+import com.pickit.backend.chat.repository.ChatRoomRepository;
 import com.pickit.backend.common.service.FileService;
 import com.pickit.backend.interest.repository.UserInterestRepository;
 import com.pickit.backend.popup.entity.Popup;
@@ -42,6 +43,8 @@ public class PostService {
     private final CategoryRepository categoryRepository;
     private final PopupVerificationRepository popupVerificationRepository;
     private final FileService fileService;
+    private final PostStateResolver postStateResolver;
+    private final ChatRoomRepository chatRoomRepository;
 
     public PostService(ExchangePostRepository exchangePostRepository,
                        PostLikeRepository postLikeRepository,
@@ -50,7 +53,9 @@ public class PostService {
                        PopupRepository popupRepository,
                        CategoryRepository categoryRepository,
                        PopupVerificationRepository popupVerificationRepository,
-                       FileService fileService) {
+                       FileService fileService,
+                       PostStateResolver postStateResolver,
+                       ChatRoomRepository chatRoomRepository) {
         this.exchangePostRepository = exchangePostRepository;
         this.postLikeRepository = postLikeRepository;
         this.userInterestRepository = userInterestRepository;
@@ -59,21 +64,45 @@ public class PostService {
         this.categoryRepository = categoryRepository;
         this.popupVerificationRepository = popupVerificationRepository;
         this.fileService = fileService;
+        this.postStateResolver = postStateResolver;
+        this.chatRoomRepository = chatRoomRepository;
     }
 
-    public PostListResponse getPosts(Long popupId, Long categoryId, String status, String sort, String keyword, int page, int size, Long currentUserId) {
+    public PostListResponse getPosts(Long popupId, Long categoryId, String status, String sort, String keyword, String tab, int page, int size, Long currentUserId) {
+        String tabFilter = null;
+        if (tab != null && !tab.isBlank()) {
+            tabFilter = tab.toUpperCase();
+            if (!PostStateResolver.TAB_ONSITE.equals(tabFilter) && !PostStateResolver.TAB_GENERAL.equals(tabFilter)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "tab은 ONSITE 또는 GENERAL이어야 합니다.");
+            }
+        }
+        if (tabFilter == null) {
+            // 전체 교환 기준: tab을 생략하면 일반 교환글만 보여준다.
+            tabFilter = PostStateResolver.TAB_GENERAL;
+        }
+        if (PostStateResolver.TAB_ONSITE.equals(tabFilter)) {
+            if (popupId == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "현장 교환글은 popupId가 필요합니다.");
+            }
+            if (!postStateResolver.isVerifiedNow(currentUserId, popupId)) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "현장 교환글은 해당 팝업에서 위치 인증을 한 분만 볼 수 있습니다.");
+            }
+        }
         Sort sortOrder = Sort.by(Sort.Direction.DESC, "createdAt");
         if ("RECOMMEND".equalsIgnoreCase(sort)) {
             sortOrder = Sort.by(Sort.Direction.DESC, "createdAt");
         }
         Pageable pageable = PageRequest.of(page, size, sortOrder);
 
-        Page<ExchangePost> postPage = exchangePostRepository.findPosts(popupId, categoryId, status, keyword, pageable);
+        Page<ExchangePost> postPage = exchangePostRepository.findPosts(
+                popupId, categoryId, status, keyword, tabFilter,
+                PostStateResolver.onsiteThreshold(PostStateResolver.now()), pageable);
 
+        var states = postStateResolver.resolveAll(postPage.getContent());
         var content = postPage.getContent().stream()
                 .map(post -> {
                     boolean isLiked = currentUserId != null && postLikeRepository.existsByUserIdAndExchangePost(currentUserId, post);
-                    return PostListResponse.PostSummary.from(post, isLiked);
+                    return PostListResponse.PostSummary.from(post, isLiked, states.get(post.getPostId()));
                 })
                 .toList();
 
@@ -84,18 +113,21 @@ public class PostService {
         List<Long> categoryIds = userInterestRepository.findCategoryIdsByUserId(userId);
         Pageable pageable = PageRequest.of(0, size);
 
+        // 홈은 항상 전체(일반) 교환글 기준이라 현장 글은 제외한다.
+        LocalDateTime threshold = PostStateResolver.onsiteThreshold(PostStateResolver.now());
         List<ExchangePost> posts;
         if (categoryIds == null || categoryIds.isEmpty()) {
-            posts = exchangePostRepository.findByStatusOpen(pageable);
+            posts = exchangePostRepository.findByStatusOpen(threshold, pageable);
         } else {
-            posts = exchangePostRepository.findByCategoryIdInAndStatusOpen(categoryIds, pageable);
+            posts = exchangePostRepository.findByCategoryIdInAndStatusOpen(categoryIds, threshold, pageable);
             if (posts.isEmpty()) {
-                posts = exchangePostRepository.findByStatusOpen(pageable);
+                posts = exchangePostRepository.findByStatusOpen(threshold, pageable);
             }
         }
 
+        var states = postStateResolver.resolveAll(posts);
         return posts.stream()
-                .map(post -> PostListResponse.PostSummary.from(post, false))
+                .map(post -> PostListResponse.PostSummary.from(post, false, states.get(post.getPostId())))
                 .toList();
     }
 
@@ -103,10 +135,17 @@ public class PostService {
         ExchangePost post = exchangePostRepository.findById(postId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "교환글을 찾을 수 없습니다."));
 
+        PostStateResolver.PostState state = postStateResolver.resolve(post);
+        boolean isAuthor = currentUserId != null && currentUserId.equals(post.getUserId());
+        if (PostStateResolver.TAB_ONSITE.equals(state.tab()) && !isAuthor
+                && !postStateResolver.isVerifiedNow(currentUserId, post.getPopup().getPopupId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "현장 교환글은 해당 팝업에서 위치 인증을 한 분만 볼 수 있습니다.");
+        }
+
         User writer = userRepository.findById(post.getUserId()).orElse(null);
         boolean isLiked = currentUserId != null && postLikeRepository.existsByUserIdAndExchangePost(currentUserId, post);
 
-        return PostDetailResponse.of(post, writer, isLiked);
+        return PostDetailResponse.of(post, writer, isLiked, state);
     }
 
     @Transactional
@@ -114,7 +153,7 @@ public class PostService {
         PopupVerification verification = popupVerificationRepository.findFirstByUserIdAndPopup_PopupIdOrderByVerificationIdDesc(userId, request.popupId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "해당 팝업에 대한 위치 인증이 필요합니다."));
 
-        if (!verification.isVerifiedAt(LocalDateTime.now())) {
+        if (!verification.isVerifiedAt(PostStateResolver.now())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "위치 인증이 만료되었거나 유효하지 않습니다.");
         }
 
@@ -133,6 +172,8 @@ public class PostService {
                 request.preferredTime(),
                 request.description()
         );
+
+        post.linkVerification(verification.getVerificationId());
 
         if (request.imageUrls() != null) {
             for (int i = 0; i < request.imageUrls().size(); i++) {
@@ -173,6 +214,10 @@ public class PostService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "삭제 권한이 없습니다.");
         }
 
+        if (chatRoomRepository.existsByPost(post)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "채팅이 진행된 글은 삭제할 수 없습니다.");
+        }
+
         postLikeRepository.deleteByExchangePost(post);
         exchangePostRepository.delete(post);
     }
@@ -204,8 +249,9 @@ public class PostService {
                 ? exchangePostRepository.findByUserId(userId, pageable)
                 : exchangePostRepository.findByUserIdAndStatus(userId, status, pageable);
 
+        var states = postStateResolver.resolveAll(postPage.getContent());
         var content = postPage.getContent().stream()
-                .map(post -> PostListResponse.PostSummary.from(post, postLikeRepository.existsByUserIdAndExchangePost(userId, post)))
+                .map(post -> PostListResponse.PostSummary.from(post, postLikeRepository.existsByUserIdAndExchangePost(userId, post), states.get(post.getPostId())))
                 .toList();
 
         return new PostListResponse(content, postPage.getNumber(), postPage.getSize());
