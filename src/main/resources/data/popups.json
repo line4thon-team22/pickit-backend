@@ -1,5 +1,5 @@
 {
-  "count": 127,
+  "count": 129,
   "places": [
     {
       "popup_id": "1002935427",
@@ -2044,6 +2044,38 @@
       "homepageUrl": "https://www.mediadale.com/news/articleView.html?idxno=295899",
       "thumbnail_url": "/images/popups/mediadale-295899.jpg",
       "description": "아트 오브 하모니를 주제로 한 타트라스의 프리미엄 다운재킷과 가을·겨울 컬렉션을 만나는 팝업."
+    },
+    {
+      "popup_id": "4thon",
+      "name": "2026 4호선톤",
+      "address": "서울 마포구 백범로31길 21",
+      "district": "홍대/신촌",
+      "category": "IT/전자제품",
+      "latitude": 37.5470505,
+      "longitude": 126.9497895,
+      "start_date": "2026-11-22",
+      "end_date": "2026-11-22",
+      "status": true,
+      "placeUrl": "https://www.openstreetmap.org/way/608088218",
+      "homepageUrl": "https://www.instagram.com/line4thon/",
+      "thumbnail_url": "/images/popups/4thon.jpg",
+      "description": "동국대 멋쟁이사자처럼이 주관하는 멋쟁이사자처럼 대학 14기 연합 해커톤. 11월 22일(일) 10:00~16:30 서울창업허브 공덕에서 4호선 8개 대학 팀의 서비스를 만나는 현장."
+    },
+    {
+      "popup_id": "pickit",
+      "name": "PICKIT 팝업",
+      "address": "서울 마포구 백범로31길 21",
+      "district": "홍대/신촌",
+      "category": "IT/전자제품",
+      "latitude": 37.5470505,
+      "longitude": 126.9497895,
+      "start_date": "2026-11-22",
+      "end_date": "2026-11-22",
+      "status": true,
+      "placeUrl": "https://www.openstreetmap.org/way/608088218",
+      "homepageUrl": "https://getpickit.netlify.app",
+      "thumbnail_url": "/images/popups/pickit.png",
+      "description": "위치 기반 팝업 굿즈 현장 교환 및 굿즈 교환 전용 서비스 팝업."
     }
   ]
 }
