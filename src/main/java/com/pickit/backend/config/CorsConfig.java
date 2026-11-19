@@ -38,5 +38,9 @@ public class CorsConfig implements WebMvcConfigurer {
                 .addResourceLocations("file:uploads/posts/");
         registry.addResourceHandler("/images/chats/**")
                 .addResourceLocations("file:uploads/chats/");
+        // 팝업 썸네일도 Git·앱 이미지에 넣지 않고 서버 폴더(운영: /home/ubuntu/uploads/popups)에서 내보낸다.
+        // 사진을 넣거나 바꿀 때 배포가 필요 없다. DB thumbnail_url은 /images/popups/파일이름 그대로다.
+        registry.addResourceHandler("/images/popups/**")
+                .addResourceLocations("file:uploads/popups/");
     }
 }
