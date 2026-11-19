@@ -3,6 +3,7 @@ package com.pickit.backend.post.dto.response;
 import com.pickit.backend.auth.entity.User;
 import com.pickit.backend.post.entity.ExchangePost;
 import com.pickit.backend.post.entity.PostImage;
+import com.pickit.backend.post.service.PostCountResolver;
 import com.pickit.backend.post.service.PostStateResolver;
 import com.pickit.backend.user.dto.response.UserResponse;
 import java.time.LocalDateTime;
@@ -24,9 +25,12 @@ public record PostDetailResponse(
         UserResponse writer,
         Boolean isLiked,
         String tab,
-        String tag
+        String tag,
+        long likeCount,
+        long chatCount
 ) {
-    public static PostDetailResponse of(ExchangePost post, User writer, boolean isLiked, PostStateResolver.PostState state) {
+    public static PostDetailResponse of(ExchangePost post, User writer, boolean isLiked, PostStateResolver.PostState state,
+                                        PostCountResolver.PostCounts counts) {
         List<String> imageUrls = post.getImages().stream()
                 .sorted(java.util.Comparator.comparing(PostImage::getSortOrder))
                 .map(PostImage::getImageUrl)
@@ -50,7 +54,9 @@ public record PostDetailResponse(
                 writerResponse,
                 isLiked,
                 state.tab(),
-                state.tag()
+                state.tag(),
+                counts.likeCount(),
+                counts.chatCount()
         );
     }
 }

@@ -64,7 +64,7 @@ public class PostStateResolver {
         return result;
     }
 
-    /** 해당 팝업에서 지금 위치 인증이 유효한 사용자인지. 현장 교환글 열람·작성·새 채팅의 조건. */
+    /** 해당 팝업에서 지금 위치 인증이 유효한 사용자인지. 현장 교환글 새 채팅의 조건. */
     public boolean isVerifiedNow(Long userId, Long popupId) {
         if (userId == null || popupId == null) {
             return false;

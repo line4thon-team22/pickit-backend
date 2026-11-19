@@ -3,6 +3,7 @@ package com.pickit.backend.config;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import org.junit.jupiter.api.Test;
@@ -43,12 +44,28 @@ class SecurityConfigTest {
     @Test
     void requestWithoutTokenReturnsUnauthorized() throws Exception {
         mockMvc.perform(get("/api/me/interests"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.message").value("로그인이 필요합니다."));
+    }
+
+    @Test
+    void postListWithoutTokenIsAllowed() throws Exception {
+        mockMvc.perform(get("/api/posts"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void recommendedPostsWithoutTokenReturnsUnauthorized() throws Exception {
+        mockMvc.perform(get("/api/posts/recommended"))
                 .andExpect(status().isUnauthorized());
     }
 
     @Test
     void requestWithInvalidTokenReturnsUnauthorized() throws Exception {
         mockMvc.perform(get("/api/me/interests").header("Authorization", "Bearer invalid-token"))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.message").value("유효하지 않거나 만료된 토큰입니다."));
     }
 }

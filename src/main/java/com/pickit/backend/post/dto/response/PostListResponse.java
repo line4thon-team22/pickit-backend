@@ -2,6 +2,7 @@ package com.pickit.backend.post.dto.response;
 
 import com.pickit.backend.post.entity.ExchangePost;
 import com.pickit.backend.post.entity.PostImage;
+import com.pickit.backend.post.service.PostCountResolver;
 import com.pickit.backend.post.service.PostStateResolver;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -27,9 +28,15 @@ public record PostListResponse(
             Boolean isLiked,
             String popupName,
             String tab,
-            String tag
+            String tag,
+            long likeCount,
+            long chatCount
     ) {
-        public static PostSummary from(ExchangePost post, boolean isLiked, PostStateResolver.PostState state) {
+        public static PostSummary from(ExchangePost post, boolean isLiked, PostStateResolver.PostState state,
+                                       PostCountResolver.PostCounts counts) {
+            if (counts == null) {
+                counts = PostCountResolver.EMPTY;
+            }
             List<String> imageUrls = post.getImages().stream()
                     .sorted(java.util.Comparator.comparing(PostImage::getSortOrder))
                     .map(PostImage::getImageUrl)
@@ -51,7 +58,9 @@ public record PostListResponse(
                     isLiked,
                     post.getPopup().getName(),
                     state.tab(),
-                    state.tag()
+                    state.tag(),
+                    counts.likeCount(),
+                    counts.chatCount()
             );
         }
     }

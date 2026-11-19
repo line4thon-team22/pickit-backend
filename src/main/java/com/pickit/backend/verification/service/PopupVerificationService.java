@@ -8,11 +8,14 @@ import com.pickit.backend.popup.repository.PopupRepository;
 import com.pickit.backend.popup.service.PopupLikeService;
 import com.pickit.backend.popup.service.PopupService;
 import com.pickit.backend.verification.dto.request.LocationRequest;
+import com.pickit.backend.verification.dto.response.LocationStatusResponse;
 import com.pickit.backend.verification.dto.response.PopupVerificationItemResponse;
 import com.pickit.backend.verification.dto.response.VerificationResponse;
 import com.pickit.backend.verification.entity.PopupVerification;
 import com.pickit.backend.verification.entity.PresenceStatus;
+import com.pickit.backend.verification.entity.UserLocationVerification;
 import com.pickit.backend.verification.repository.PopupVerificationRepository;
+import com.pickit.backend.verification.repository.UserLocationVerificationRepository;
 import com.pickit.backend.verification.repository.VerificationUserStore;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -41,16 +44,19 @@ public class PopupVerificationService {
     private final PopupRepository popupRepository;
     private final PopupService popupService;
     private final PopupLikeService popupLikeService;
+    private final UserLocationVerificationRepository locationVerificationRepository;
     private final Clock clock;
 
     public PopupVerificationService(PopupVerificationRepository verificationRepository,
             VerificationUserStore userStore, PopupRepository popupRepository, PopupService popupService,
-            PopupLikeService popupLikeService, @Qualifier("verificationClock") Clock clock) {
+            PopupLikeService popupLikeService, UserLocationVerificationRepository locationVerificationRepository,
+            @Qualifier("verificationClock") Clock clock) {
         this.verificationRepository = verificationRepository;
         this.userStore = userStore;
         this.popupRepository = popupRepository;
         this.popupService = popupService;
         this.popupLikeService = popupLikeService;
+        this.locationVerificationRepository = locationVerificationRepository;
         this.clock = clock;
     }
 
@@ -70,12 +76,12 @@ public class PopupVerificationService {
         List<PopupVerification> current = verificationRepository.findLatestByUserId(userId);
         rejectOutOfOrder(current, sample);
 
+        // 위치 측정이 정상이면 반경 안에 팝업이 없어도 앱 전체 위치 인증 완료로 기록한다.
+        // 이때는 새 팝업 인증 없이 200으로 응답하며 verifiedCount가 0일 수 있다.
+        recordLocationVerification(userId, now);
         List<Long> popupIds = popupRepository.findNearbyPopups(
                 sample.lat(), sample.lng(), VerificationPolicy.RADIUS_METERS
         ).stream().map(NearbyPopupProjection::getPopupId).toList();
-        if (popupIds.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "인증 반경 안에 팝업이 없습니다.");
-        }
 
         applyLocation(current, sample, now);
         Map<Long, PopupVerification> previous = current.stream().collect(Collectors.toMap(
@@ -108,6 +114,22 @@ public class PopupVerificationService {
         userStore.requireUser(userId, false);
         return snapshot(verificationRepository.findLatestByUserId(userId), databaseTime(clock.instant()),
                 includeInactive);
+    }
+
+    /** 한 번이라도 위치 인증(확인 버튼)을 완료했는지. 팝업별 유효기간과 달리 만료되지 않는다. */
+    public LocationStatusResponse getLocationStatus(Long userId) {
+        userStore.requireUser(userId, false);
+        return locationVerificationRepository.findByUserId(userId)
+                .map(record -> new LocationStatusResponse(true,
+                        offset(record.getFirstVerifiedAt()), offset(record.getLastVerifiedAt())))
+                .orElseGet(() -> new LocationStatusResponse(false, null, null));
+    }
+
+    private void recordLocationVerification(Long userId, LocalDateTime now) {
+        // verify가 회원 행을 잠근 뒤 호출하므로 같은 회원의 동시 요청이 행을 두 번 만들지 않는다.
+        locationVerificationRepository.findByUserId(userId).ifPresentOrElse(
+                record -> record.verifyAgainAt(now),
+                () -> locationVerificationRepository.save(new UserLocationVerification(userId, now)));
     }
 
     /** 다른 모듈이 서버에서 사용자·팝업별 현재 인증 상태를 확인하는 연동 지점. */

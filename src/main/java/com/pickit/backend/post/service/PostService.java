@@ -2,8 +2,6 @@ package com.pickit.backend.post.service;
 
 import com.pickit.backend.auth.entity.User;
 import com.pickit.backend.auth.repository.UserRepository;
-import com.pickit.backend.category.entity.Category;
-import com.pickit.backend.category.repository.CategoryRepository;
 import com.pickit.backend.chat.repository.ChatRoomRepository;
 import com.pickit.backend.common.service.FileService;
 import com.pickit.backend.interest.repository.UserInterestRepository;
@@ -17,7 +15,6 @@ import com.pickit.backend.post.entity.ExchangePost;
 import com.pickit.backend.post.entity.PostImage;
 import com.pickit.backend.post.repository.ExchangePostRepository;
 import com.pickit.backend.post.repository.PostLikeRepository;
-import com.pickit.backend.verification.entity.PopupVerification;
 import com.pickit.backend.verification.repository.PopupVerificationRepository;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -40,32 +37,32 @@ public class PostService {
     private final UserInterestRepository userInterestRepository;
     private final UserRepository userRepository;
     private final PopupRepository popupRepository;
-    private final CategoryRepository categoryRepository;
     private final PopupVerificationRepository popupVerificationRepository;
     private final FileService fileService;
     private final PostStateResolver postStateResolver;
     private final ChatRoomRepository chatRoomRepository;
+    private final PostCountResolver postCountResolver;
 
     public PostService(ExchangePostRepository exchangePostRepository,
                        PostLikeRepository postLikeRepository,
                        UserInterestRepository userInterestRepository,
                        UserRepository userRepository,
                        PopupRepository popupRepository,
-                       CategoryRepository categoryRepository,
                        PopupVerificationRepository popupVerificationRepository,
                        FileService fileService,
                        PostStateResolver postStateResolver,
-                       ChatRoomRepository chatRoomRepository) {
+                       ChatRoomRepository chatRoomRepository,
+                       PostCountResolver postCountResolver) {
         this.exchangePostRepository = exchangePostRepository;
         this.postLikeRepository = postLikeRepository;
         this.userInterestRepository = userInterestRepository;
         this.userRepository = userRepository;
         this.popupRepository = popupRepository;
-        this.categoryRepository = categoryRepository;
         this.popupVerificationRepository = popupVerificationRepository;
         this.fileService = fileService;
         this.postStateResolver = postStateResolver;
         this.chatRoomRepository = chatRoomRepository;
+        this.postCountResolver = postCountResolver;
     }
 
     public PostListResponse getPosts(Long popupId, Long categoryId, String status, String sort, String keyword, String tab, int page, int size, Long currentUserId) {
@@ -76,17 +73,10 @@ public class PostService {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "tab은 ONSITE 또는 GENERAL이어야 합니다.");
             }
         }
-        if (tabFilter == null) {
-            // 전체 교환 기준: tab을 생략하면 일반 교환글만 보여준다.
-            tabFilter = PostStateResolver.TAB_GENERAL;
-        }
-        if (PostStateResolver.TAB_ONSITE.equals(tabFilter)) {
-            if (popupId == null) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "현장 교환글은 popupId가 필요합니다.");
-            }
-            if (!postStateResolver.isVerifiedNow(currentUserId, popupId)) {
-                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "현장 교환글은 해당 팝업에서 위치 인증을 한 분만 볼 수 있습니다.");
-            }
+        // tab을 생략하면(tabFilter == null) 현장 + 일반 교환글을 모두 보여준다. ("전체 교환" 화면)
+        // 현장 교환글은 위치 인증 없이도 열람할 수 있다. (위치 인증은 글 작성에만 필요)
+        if (PostStateResolver.TAB_ONSITE.equals(tabFilter) && popupId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "현장 교환글은 popupId가 필요합니다.");
         }
         Sort sortOrder = Sort.by(Sort.Direction.DESC, "createdAt");
         if ("RECOMMEND".equalsIgnoreCase(sort)) {
@@ -99,10 +89,11 @@ public class PostService {
                 PostStateResolver.onsiteThreshold(PostStateResolver.now()), pageable);
 
         var states = postStateResolver.resolveAll(postPage.getContent());
+        var counts = postCountResolver.countAll(postPage.getContent());
         var content = postPage.getContent().stream()
                 .map(post -> {
                     boolean isLiked = currentUserId != null && postLikeRepository.existsByUserIdAndExchangePost(currentUserId, post);
-                    return PostListResponse.PostSummary.from(post, isLiked, states.get(post.getPostId()));
+                    return PostListResponse.PostSummary.from(post, isLiked, states.get(post.getPostId()), counts.get(post.getPostId()));
                 })
                 .toList();
 
@@ -126,8 +117,9 @@ public class PostService {
         }
 
         var states = postStateResolver.resolveAll(posts);
+        var counts = postCountResolver.countAll(posts);
         return posts.stream()
-                .map(post -> PostListResponse.PostSummary.from(post, false, states.get(post.getPostId())))
+                .map(post -> PostListResponse.PostSummary.from(post, false, states.get(post.getPostId()), counts.get(post.getPostId())))
                 .toList();
     }
 
@@ -136,36 +128,22 @@ public class PostService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "교환글을 찾을 수 없습니다."));
 
         PostStateResolver.PostState state = postStateResolver.resolve(post);
-        boolean isAuthor = currentUserId != null && currentUserId.equals(post.getUserId());
-        if (PostStateResolver.TAB_ONSITE.equals(state.tab()) && !isAuthor
-                && !postStateResolver.isVerifiedNow(currentUserId, post.getPopup().getPopupId())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "현장 교환글은 해당 팝업에서 위치 인증을 한 분만 볼 수 있습니다.");
-        }
 
         User writer = userRepository.findById(post.getUserId()).orElse(null);
         boolean isLiked = currentUserId != null && postLikeRepository.existsByUserIdAndExchangePost(currentUserId, post);
 
-        return PostDetailResponse.of(post, writer, isLiked, state);
+        return PostDetailResponse.of(post, writer, isLiked, state, postCountResolver.count(post));
     }
 
     @Transactional
     public Long createPost(Long userId, CreatePostRequest request) {
-        PopupVerification verification = popupVerificationRepository.findFirstByUserIdAndPopup_PopupIdOrderByVerificationIdDesc(userId, request.popupId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "해당 팝업에 대한 위치 인증이 필요합니다."));
-
-        if (!verification.isVerifiedAt(PostStateResolver.now())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "위치 인증이 만료되었거나 유효하지 않습니다.");
-        }
-
         Popup popup = popupRepository.findById(request.popupId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "팝업을 찾을 수 없습니다."));
-        Category category = categoryRepository.findById(request.categoryId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "카테고리를 찾을 수 없습니다."));
 
         ExchangePost post = new ExchangePost(
                 userId,
                 popup,
-                category,
+                popup.getCategory(), // 카테고리는 팝업 기준으로 자동 지정
                 request.haveItemName(),
                 request.wantItemName(),
                 request.preferredLocation(),
@@ -173,7 +151,10 @@ public class PostService {
                 request.description()
         );
 
-        post.linkVerification(verification.getVerificationId());
+        // 위치 인증 없이도 작성할 수 있다. 해당 팝업 인증이 유효하면 현장(ONSITE) 글로 연결하고, 없으면 일반(GENERAL) 글이 된다.
+        popupVerificationRepository.findFirstByUserIdAndPopup_PopupIdOrderByVerificationIdDesc(userId, request.popupId())
+                .filter(v -> v.isVerifiedAt(PostStateResolver.now()))
+                .ifPresent(v -> post.linkVerification(v.getVerificationId()));
 
         if (request.imageUrls() != null) {
             for (int i = 0; i < request.imageUrls().size(); i++) {
@@ -250,8 +231,10 @@ public class PostService {
                 : exchangePostRepository.findByUserIdAndStatus(userId, status, pageable);
 
         var states = postStateResolver.resolveAll(postPage.getContent());
+        var counts = postCountResolver.countAll(postPage.getContent());
         var content = postPage.getContent().stream()
-                .map(post -> PostListResponse.PostSummary.from(post, postLikeRepository.existsByUserIdAndExchangePost(userId, post), states.get(post.getPostId())))
+                .map(post -> PostListResponse.PostSummary.from(post, postLikeRepository.existsByUserIdAndExchangePost(userId, post),
+                        states.get(post.getPostId()), counts.get(post.getPostId())))
                 .toList();
 
         return new PostListResponse(content, postPage.getNumber(), postPage.getSize());

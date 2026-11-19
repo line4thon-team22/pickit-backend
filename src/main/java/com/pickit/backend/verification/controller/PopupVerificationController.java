@@ -4,6 +4,7 @@ import com.pickit.backend.common.ApiResponse;
 import com.pickit.backend.popup.dto.response.NearbyPopupResponse;
 import com.pickit.backend.verification.auth.VerificationUserResolver;
 import com.pickit.backend.verification.dto.request.LocationRequest;
+import com.pickit.backend.verification.dto.response.LocationStatusResponse;
 import com.pickit.backend.verification.dto.response.VerificationResponse;
 import com.pickit.backend.verification.service.PopupVerificationService;
 import jakarta.validation.Valid;
@@ -50,5 +51,13 @@ public class PopupVerificationController {
             HttpServletResponse response) {
         response.setHeader("Cache-Control", "no-store");
         return ApiResponse.ok(verificationService.getCurrent(userResolver.requireUserId(principal), includeInactive));
+    }
+
+    /** 헤더 버튼용: 위치 인증을 한 번이라도 완료했는지(false면 "위치 인증", true면 "팝업 확인"). */
+    @GetMapping("/api/me/location-status")
+    public ApiResponse<LocationStatusResponse> getLocationStatus(Principal principal,
+            HttpServletResponse response) {
+        response.setHeader("Cache-Control", "no-store");
+        return ApiResponse.ok(verificationService.getLocationStatus(userResolver.requireUserId(principal)));
     }
 }

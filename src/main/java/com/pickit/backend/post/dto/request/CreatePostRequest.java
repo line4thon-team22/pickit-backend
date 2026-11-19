@@ -6,7 +6,6 @@ import java.util.List;
 
 public record CreatePostRequest(
         @NotNull Long popupId,
-        @NotNull Long categoryId,
         @NotBlank String haveItemName,
         @NotBlank String wantItemName,
         String preferredLocation,
