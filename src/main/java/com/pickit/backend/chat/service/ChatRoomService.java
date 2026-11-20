@@ -14,7 +14,6 @@ import com.pickit.backend.chat.repository.ChatRoomRepository;
 import com.pickit.backend.common.service.FileService;
 import com.pickit.backend.post.entity.ExchangePost;
 import com.pickit.backend.post.repository.ExchangePostRepository;
-import com.pickit.backend.post.service.PostStateResolver;
 import java.util.List;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
@@ -34,20 +33,18 @@ public class ChatRoomService {
     private final UserRepository userRepository;
     private final FileService fileService;
     private final TradeAppointmentRepository appointmentRepository;
-    private final PostStateResolver postStateResolver;
     private final TradeReviewRepository reviewRepository;
 
     public ChatRoomService(ChatRoomRepository chatRoomRepository, ExchangePostRepository exchangePostRepository,
                            ChatMessageRepository chatMessageRepository, UserRepository userRepository,
                            FileService fileService, TradeAppointmentRepository appointmentRepository,
-                           PostStateResolver postStateResolver, TradeReviewRepository reviewRepository) {
+                           TradeReviewRepository reviewRepository) {
         this.chatRoomRepository = chatRoomRepository;
         this.exchangePostRepository = exchangePostRepository;
         this.chatMessageRepository = chatMessageRepository;
         this.userRepository = userRepository;
         this.fileService = fileService;
         this.appointmentRepository = appointmentRepository;
-        this.postStateResolver = postStateResolver;
         this.reviewRepository = reviewRepository;
     }
 
@@ -61,13 +58,8 @@ public class ChatRoomService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "본인의 교환글에는 채팅방을 만들 수 없습니다.");
         }
 
+        // 현장 교환글도 위치 인증 없이 채팅을 시작할 수 있다. (위치 인증은 글 작성 시 현장/일반 분류에만 쓴다.)
         var existingRoom = chatRoomRepository.findByPostAndBuyerId(post, buyerId);
-        // 이미 대화 중인 방은 그대로 열 수 있고, 새 채팅만 현장 글 인증 조건을 확인한다.
-        if (existingRoom.isEmpty()
-                && PostStateResolver.TAB_ONSITE.equals(postStateResolver.resolve(post).tab())
-                && !postStateResolver.isVerifiedNow(buyerId, post.getPopup().getPopupId())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "현장 교환글은 해당 팝업에서 위치 인증을 한 분만 채팅을 시작할 수 있습니다.");
-        }
 
         // 이미 예약 중이거나 교환 완료된 글에는 새 채팅을 시작할 수 없다. (기존 방은 위에서 그대로 열린다.)
         if (existingRoom.isEmpty() && !"OPEN".equals(post.getStatus())) {

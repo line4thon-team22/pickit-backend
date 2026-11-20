@@ -80,9 +80,12 @@ public class PopupService {
         return new NearbyPopupResponse(lat, lng, radiusMeters, items, items.size());
     }
 
-    public PopupDetailResponse getPopupDetail(Long popupId) {
+    /** userId가 null이면 비로그인으로 보고 찜 여부를 false로 둔다. */
+    public PopupDetailResponse getPopupDetail(Long popupId, Long userId) {
         Popup popup = popupRepository.findById(popupId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "팝업을 찾을 수 없습니다."));
+        boolean isLiked = userId != null && popupLikeService.isLiked(userId, popupId);
+        long likeCount = popupLikeService.countLikes(popupId);
 
         return new PopupDetailResponse(
                 popup.getPopupId(),
@@ -95,7 +98,9 @@ public class PopupService {
                 popup.getStartDate(),
                 popup.getEndDate(),
                 PopupStatus.fromDates(popup.getStartDate(), popup.getEndDate(), LocalDate.now(SEOUL)),
-                popup.getDescription()
+                popup.getDescription(),
+                isLiked,
+                likeCount
         );
     }
 

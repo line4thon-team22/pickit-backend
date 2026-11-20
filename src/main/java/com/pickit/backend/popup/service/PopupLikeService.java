@@ -77,6 +77,14 @@ public class PopupLikeService {
         return Set.copyOf(popupLikeRepository.findPopupIdsByUserId(userId));
     }
 
+    public boolean isLiked(Long userId, Long popupId) {
+        return popupLikeRepository.existsByUserIdAndPopup_PopupId(userId, popupId);
+    }
+
+    public long countLikes(Long popupId) {
+        return popupLikeRepository.countByPopup_PopupId(popupId);
+    }
+
     /** 팝업 ID별 찜 수를 한 번의 쿼리로 센다. 찜이 없는 팝업은 결과에 없으므로 0으로 본다. */
     public Map<Long, Long> countLikes(Collection<Long> popupIds) {
         if (popupIds.isEmpty()) {

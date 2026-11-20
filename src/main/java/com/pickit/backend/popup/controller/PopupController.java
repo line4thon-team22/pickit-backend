@@ -58,9 +58,12 @@ public class PopupController {
 
     @GetMapping("/{popupId}")
     public ApiResponse<PopupDetailResponse> getPopupDetail(
+            Principal principal,
             @PathVariable("popupId") @Positive Long popupId
     ) {
-        return ApiResponse.ok(popupService.getPopupDetail(popupId));
+        // 목록과 같이 비로그인은 찜 여부 false로 보여 준다.
+        Long userId = principal == null ? null : userResolver.requireUserId(principal);
+        return ApiResponse.ok(popupService.getPopupDetail(popupId, userId));
     }
 
     @PutMapping("/{popupId}/like")

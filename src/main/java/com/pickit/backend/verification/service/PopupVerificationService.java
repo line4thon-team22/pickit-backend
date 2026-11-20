@@ -27,6 +27,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -95,7 +96,7 @@ public class PopupVerificationService {
             }
         }
         verificationRepository.flush();
-        return snapshot(verificationRepository.findLatestByUserId(userId), now, true);
+        return snapshot(userId, verificationRepository.findLatestByUserId(userId), now, true);
     }
 
     @Transactional
@@ -107,12 +108,12 @@ public class PopupVerificationService {
         List<PopupVerification> current = verificationRepository.findLatestByUserId(userId);
         rejectOutOfOrder(current, sample);
         applyLocation(current, sample, now);
-        return snapshot(current, now, true);
+        return snapshot(userId, current, now, true);
     }
 
     public VerificationResponse getCurrent(Long userId, boolean includeInactive) {
         userStore.requireUser(userId, false);
-        return snapshot(verificationRepository.findLatestByUserId(userId), databaseTime(clock.instant()),
+        return snapshot(userId, verificationRepository.findLatestByUserId(userId), databaseTime(clock.instant()),
                 includeInactive);
     }
 
@@ -136,7 +137,8 @@ public class PopupVerificationService {
     public PopupVerificationItemResponse getPresence(Long userId, Long popupId) {
         LocalDateTime now = databaseTime(clock.instant());
         return verificationRepository.findFirstByUserIdAndPopup_PopupIdOrderByVerificationIdDesc(userId, popupId)
-                .map(verification -> toItem(verification, now, popupLikeService.countLikes(List.of(popupId))))
+                .map(verification -> toItem(verification, now, popupLikeService.countLikes(List.of(popupId)),
+                        popupLikeService.isLiked(userId, popupId) ? Set.of(popupId) : Set.of()))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "인증 기록이 없습니다."));
     }
 
@@ -189,13 +191,15 @@ public class PopupVerificationService {
         }
     }
 
-    private VerificationResponse snapshot(List<PopupVerification> verifications, LocalDateTime now,
+    private VerificationResponse snapshot(Long userId, List<PopupVerification> verifications, LocalDateTime now,
             boolean includeInactive) {
         Map<Long, Long> likeCounts = popupLikeService.countLikes(verifications.stream()
                 .map(verification -> verification.getPopup().getPopupId())
                 .toList());
+        // 내 현장 팝업 카드의 찜 표시용. 회원이 찜한 팝업 ID를 한 번에 읽는다.
+        Set<Long> likedPopupIds = verifications.isEmpty() ? Set.of() : popupLikeService.findLikedPopupIds(userId);
         List<PopupVerificationItemResponse> items = verifications.stream()
-                .map(verification -> toItem(verification, now, likeCounts))
+                .map(verification -> toItem(verification, now, likeCounts, likedPopupIds))
                 .filter(item -> includeInactive || item.isVerified())
                 .sorted(Comparator.comparing(PopupVerificationItemResponse::isVerified).reversed()
                         .thenComparingDouble(PopupVerificationItemResponse::distanceMeters)
@@ -207,7 +211,7 @@ public class PopupVerificationService {
     }
 
     private PopupVerificationItemResponse toItem(PopupVerification verification, LocalDateTime now,
-            Map<Long, Long> likeCounts) {
+            Map<Long, Long> likeCounts, Set<Long> likedPopupIds) {
         Popup popup = verification.getPopup();
         PresenceStatus status;
         if (verification.getLeftAt() != null) {
@@ -224,6 +228,7 @@ public class PopupVerificationService {
                 popup.getStartDate(), popup.getEndDate(),
                 PopupStatus.fromDates(popup.getStartDate(), popup.getEndDate(), now.toLocalDate()),
                 likeCounts.getOrDefault(popup.getPopupId(), 0L),
+                likedPopupIds.contains(popup.getPopupId()),
                 GeoDistance.meters(lat, lng, popup.getLatitude(), popup.getLongitude()),
                 status == PresenceStatus.LIVE, status,
                 offset(verification.getVerifiedAt()), offset(verification.getExpiredAt()),

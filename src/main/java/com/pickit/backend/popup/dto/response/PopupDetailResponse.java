@@ -14,6 +14,9 @@ public record PopupDetailResponse(
         LocalDate startDate,
         LocalDate endDate,
         PopupStatus status,
-        String description
+        String description,
+        // 팝업 목록과 같은 찜 표시. 비로그인이면 isLiked는 false다.
+        boolean isLiked,
+        long likeCount
 ) {
 }

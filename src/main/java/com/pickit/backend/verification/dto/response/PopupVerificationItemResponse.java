@@ -16,6 +16,8 @@ public record PopupVerificationItemResponse(
         LocalDate endDate,
         PopupStatus popupStatus,
         long likeCount,
+        // 내 현장 팝업 카드의 찜 표시. 팝업 목록의 isLiked와 같은 뜻이다.
+        boolean isLiked,
         double distanceMeters,
         boolean isVerified,
         PresenceStatus presenceStatus,
